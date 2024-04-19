@@ -76,7 +76,7 @@ void randint(std::array<numtype, size> &a, std::mt19937 &gen, int min,
 
 
 template <typename numtype, size_t rows, size_t cols>
-std::string show(std::array<numtype, rows * cols> a, std::string name = "") {
+std::string show(std::array<numtype, rows * cols> a, std::string name) {
   std::string output = "\n";
   if (name != "") {
     output += name + " : \n";

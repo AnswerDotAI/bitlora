@@ -38,8 +38,8 @@ __device__ void show_tilef(const float *W, int R, int C) {
 
 static constexpr int kTileWidth = 32;
 
-__global__ void mm1b(const unsigned char *w, const float *z, const float *s, const float *xin,
-                       float *out, int M, int K, int N, int G) {
+__global__ void mm1b(const unsigned char *w, const float *z, const float *s,
+                     const float *xin, float *out, int M, int K, int N, int G) {
 
   __shared__ float xTile[kTileWidth * kTileWidth];
   __shared__ unsigned char wTile[kTileWidth * kTileWidth / 8 + 1];
@@ -63,19 +63,15 @@ __global__ void mm1b(const unsigned char *w, const float *z, const float *s, con
         wTile[ty * kTileWidth / 8 + tx / 8] =
             w[(y * K + (ph * kTileWidth + tx)) / 8];
 
-
 #if DEBUG
         int row_bit = ph * kTileWidth + tx;
         int ti = ty * kTileWidth / 8 + tx / 8;
         printf("Writing values to smem (bit space): (%d, %d-%d) "
                "%c%c%c%c%c%c%c%c written to (%d x %d + %d) \n",
                y, row_bit, row_bit + 8, w[ti] >> 0 & 0b1 ? 'X' : '.',
-               w[ti] >> 1 & 0b1 ? 'X' : '.',
-               w[ti] >> 2 & 0b1 ? 'X' : '.',
-               w[ti] >> 3 & 0b1 ? 'X' : '.',
-               w[ti] >> 4 & 0b1 ? 'X' : '.',
-               w[ti] >> 5 & 0b1 ? 'X' : '.',
-               w[ti] >> 6 & 0b1 ? 'X' : '.',
+               w[ti] >> 1 & 0b1 ? 'X' : '.', w[ti] >> 2 & 0b1 ? 'X' : '.',
+               w[ti] >> 3 & 0b1 ? 'X' : '.', w[ti] >> 4 & 0b1 ? 'X' : '.',
+               w[ti] >> 5 & 0b1 ? 'X' : '.', w[ti] >> 6 & 0b1 ? 'X' : '.',
                w[ti] >> 7 & 0b1 ? 'X' : '.', ty, kTileWidth, tx / 8);
 #endif // DEBUG
       }
@@ -86,6 +82,7 @@ __global__ void mm1b(const unsigned char *w, const float *z, const float *s, con
     __syncthreads();
 
 #if DEBUG
+
     // block to check for debugging
     static constexpr int xb = 0;
     static constexpr int yb = 0;
@@ -103,8 +100,13 @@ __global__ void mm1b(const unsigned char *w, const float *z, const float *s, con
       size_t woffset = ty * kTileWidth + k;
       size_t xoffset = k * kTileWidth + tx;
       int bit_value = (wTile[woffset / 8] >> (woffset % 8)) & 0b1;
-      if (y < M && x < N && k < K) {
-        p += bit_value * xTile[xoffset];
+      if (y < M && x < N && k < K && bit_value) {
+        // TODO: incorporate zp and scale
+        // int group = woffset / 64;
+        // float scale = s[group];
+        // printf("scale %f\n", scale);
+        // float zp = z[group];
+        p += xTile[xoffset];
       }
     }
 

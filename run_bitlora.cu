@@ -72,7 +72,7 @@ void populate_values(std::array<int, M * K> &W_unpacked,
   std::mt19937 gen(42);
   randint<int, M * K>(W_unpacked, gen, 0, 1);
   std::fill_n(begin(z), G, 0.0);
-  std::fill_n(begin(s), G, 0.0);
+  std::fill_n(begin(s), G, 1.0);
   randint<float, K * N>(x, gen, -1, 4);
   std::fill_n(begin(out), M * N, 0.0);
 }
@@ -99,8 +99,8 @@ void launch(const std::array<unsigned char, cdiv(M *K, 8)> &w,
   static constexpr int kTileWidth = 32;
   dim3 threadsPerBlock(kTileWidth, kTileWidth, 1);
   dim3 blocksPerGrid(cdiv(N, kTileWidth), cdiv(M, kTileWidth), 1);
-  spdlog::info("threadsPerBlock: ({}, {}, {})", threadsPerBlock.x, threadsPerBlock.y,
-               threadsPerBlock.z);
+  spdlog::info("threadsPerBlock: ({}, {}, {})", threadsPerBlock.x,
+               threadsPerBlock.y, threadsPerBlock.z);
   spdlog::info("blocksPerGrid: ({}, {}, {})", blocksPerGrid.x, blocksPerGrid.y,
                blocksPerGrid.z);
 
@@ -125,25 +125,28 @@ int main() {
   logger->set_pattern("[%^%l%$] %v");
   spdlog::info(show_runtime_info(0));
 
-  static constexpr size_t M = 64;
-  static constexpr size_t K = 32;
-  static constexpr size_t N = 2;
+  static constexpr size_t M = 8;
+  static constexpr size_t K = 256;
+  static constexpr size_t N = 8;
   static constexpr size_t G = cdiv(M * K, /* group size = */ 64);
 
-  std::array<int, M * K> w_orig; // values before bit packing
+  std::array<int, M * K> w_orig;               // w w/o bit packing
+  std::array<unsigned char, cdiv(M * K, 8)> w; // w w/ bit packing
   std::array<float, G> z;
   std::array<float, G> s;
   std::array<float, K * N> x;
   std::array<float, M * N> out;
-  std::array<unsigned char, cdiv(M * K, 8)> w;
-
   populate_values<M, K, N, G>(w_orig, z, s, x, out);
   bit_encoder<M, K>(w_orig, w);
-  spdlog::info(show<int, M, K>(w_orig), "w_orig");
-  spdlog::info(show<float, K, N>(x), "x");
+
+  spdlog::info(show<int, M, K>(w_orig, "w_orig"));
+  spdlog::info(show<float, K, N>(x, "x"));
+  spdlog::info(show<float, 1, G>(z, "z"));
+  spdlog::info(show<float, 1, G>(s, "s"));
+
   launch<M, K, N, G, mm1b>(w, z, s, x, out);
 
-  spdlog::info(show<float, M, N>(out), "out");
+  spdlog::info(show<float, M, N>(out, "out"));
 
   cudaDeviceReset();
   spdlog::info("Done");
