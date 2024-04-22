@@ -9,37 +9,13 @@
 
 #ifndef DEBUG
 #define DEBUG 1
+#include "kernel_tools.cuh"
 #endif
-
-__device__ void show_tile1b(const unsigned char *W_q, int R, int C) {
-  for (int r = 0; r < R; r++) {
-    printf("%5d: ", r);
-    for (int c = 0; c < C; c++) {
-      int current_bit = (W_q[r * (C / 8) + c / 8] >> (c % 8)) & 0b1;
-      if (current_bit == 1) {
-        printf("X");
-      } else {
-        printf(".");
-      }
-    }
-    printf("\n");
-  }
-}
-
-__device__ void show_tilef(const float *W, int R, int C) {
-  for (int r = 0; r < R; r++) {
-    printf("%5d: ", r);
-    for (int c = 0; c < C; c++) {
-      printf("%2.0f ", W[r * C + c]);
-    }
-    printf("\n");
-  }
-}
 
 static constexpr int kTileWidth = 32;
 
 __global__ void mm1b(const unsigned char *w, const float *z, const float *s,
-                     const float *xin, float *out, int M, int K, int N, int G) {
+                     const float *xin, float *out, int M, int K, int N, int GS) {
 
   __shared__ float xTile[kTileWidth * kTileWidth];
   __shared__ unsigned char wTile[kTileWidth * kTileWidth / 8 + 1];
@@ -100,13 +76,16 @@ __global__ void mm1b(const unsigned char *w, const float *z, const float *s,
       size_t woffset = ty * kTileWidth + k;
       size_t xoffset = k * kTileWidth + tx;
       int bit_value = (wTile[woffset / 8] >> (woffset % 8)) & 0b1;
-      if (y < M && x < N && k < K && bit_value) {
-        // TODO: incorporate zp and scale
-        // int group = woffset / 64;
-        // float scale = s[group];
-        // printf("scale %f\n", scale);
-        // float zp = z[group];
-        p += xTile[xoffset];
+      if (y < M && x < N && k < K) {
+        int group = woffset / GS;
+        float scale = s[group];
+        float zp = z[group];
+        // TODO: would this be faster as a multiplication?
+        if (bit_value == 1) {
+          p += xTile[xoffset] * scale - scale * zp;
+        } else {
+          p -= scale * zp;
+        }
       }
     }
 

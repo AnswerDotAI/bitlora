@@ -7,14 +7,6 @@ import sys
 from typing import List, Set
 import timeit
 
-import bitsandbytes as bnb
-
-from composer import functional as F
-from composer import Trainer
-from composer.models.base import ComposerModel
-from composer.metrics import CrossEntropy
-from composer.models.huggingface import HuggingFaceModel
-
 import pandas as pd
 
 from torch.optim.lr_scheduler import OneCycleLR
@@ -65,25 +57,6 @@ class BitLoraBlock(nn.Module):
         x = self.lora_a(x)
         x = self.lora_b(x)
         return x + y
-
-
-class BitGemma(ComposerModel):
-    """Wraps model for Mosaic Composer training."""
-
-    def __init__(self, model: nn.Module):
-        super().__init__()
-        self.model = model
-        self.config = model.config
-
-    def loss(self, outputs, batch):
-        # TODO
-        return None
-
-    def forward(self, batch):
-        x, _ = batch
-        y = self.model.generate(x)
-        # TODO
-        return None
 
 
 def bitlora_block(
@@ -266,9 +239,14 @@ def formatting_func(example):
 def prep_data():
     # From compose tutorial: https://www.databricks.com/blog/efficient-fine-tuning-lora-guide-llms
     rd_ds = load_dataset("xiyuez/red-dot-design-award-product-description")
-    rd_df = pd.DataFrame(rd_ds['train'])
-    rd_df['instruction'] = 'Create a detailed description for the following product: '+ rd_df['product']+', belonging to category: '+ rd_df['category']
-    rd_df = rd_df[['instruction', 'description']]
+    rd_df = pd.DataFrame(rd_ds["train"])
+    rd_df["instruction"] = (
+        "Create a detailed description for the following product: "
+        + rd_df["product"]
+        + ", belonging to category: "
+        + rd_df["category"]
+    )
+    rd_df = rd_df[["instruction", "description"]]
     rd_df_sample = rd_df.sample(n=5000, random_state=42)
     template = """Below is an instruction that describes a task. Write a response that appropriately completes the request.
 
@@ -277,14 +255,28 @@ def prep_data():
     {}
 
     ### Response:\n"""
-    rd_df_sample['prompt'] = rd_df_sample["instruction"].apply(lambda x: template.format(x))
-    rd_df_sample.rename(columns={'description': 'response'}, inplace=True)
-    rd_df_sample['response'] = rd_df_sample['response'] + "\n### End"
-    rd_df_sample = rd_df_sample[['prompt', 'response']]
-    rd_df_sample['text'] = rd_df_sample["prompt"] + rd_df_sample["response"]
-    rd_df_sample.drop(columns=['prompt', 'response'], inplace=True)
+    rd_df_sample["prompt"] = rd_df_sample["instruction"].apply(
+        lambda x: template.format(x)
+    )
+    rd_df_sample.rename(columns={"description": "response"}, inplace=True)
+    rd_df_sample["response"] = rd_df_sample["response"] + "\n### End"
+    rd_df_sample = rd_df_sample[["prompt", "response"]]
+    rd_df_sample["text"] = rd_df_sample["prompt"] + rd_df_sample["response"]
+    rd_df_sample.drop(columns=["prompt", "response"], inplace=True)
     return rd_ds, rd_df_sample, rd_df
 
+
+def train(model: nn.Module, dataloader, optimizer):
+    pass
+    # TODO, implement roughly:
+    # while training:
+    #    batch = next(iter(dataloader))
+    #    input_tokens = batch["input_ids"]
+    #    logits = model(input_tokens)
+    #    loss = F.binary_cross_entropy_with_logits(logits, target)
+    #    optimizer.zero_grad()
+    #    loss.backward()
+    #    optimizer.step()
 
 
 if __name__ == "__main__":
@@ -329,12 +321,12 @@ if __name__ == "__main__":
     # Poke at HQQ params
     sd = bitlora.base_model.layers[0].mlp.gate_proj.base_layer.state_dict()
     pprint(sd)
-    pprint(sd['meta']['scale'].shape) # torch.Size([1, 524288])
-    pprint(sd['meta']['zero_q'].shape) # torch.Size([1, 524288])
-    pprint(sd['W_q'].shape)
+    pprint(sd["meta"]["scale"].shape)  # torch.Size([1, 524288])
+    pprint(sd["meta"]["zero_q"].shape)  # torch.Size([1, 524288])
+    pprint(sd["W_q"].shape)
 
     logger.info("Freezing model and testing generation")
-    frozen = freeze(bitlora, set(["lora_a", "lora_b"]))
+    bitlora = freeze(bitlora, set(["lora_a", "lora_b"]))
     test_generation(bitlora, tokenizer, "it was the best of times it was")
 
     # Data Setup
@@ -344,13 +336,6 @@ if __name__ == "__main__":
     dataloader = torch.utils.data.DataLoader(data)
 
     # Trainer setup (WIP)
-    train_model = BitGemma(frozen)
-    optimizer = torch.optim.AdamW(train_model.parameters(), lr=1e-3)
+    optimizer = torch.optim.AdamW(bitlora.parameters(), lr=1e-3)
     batch_size = 50
-    steps_per_epoch = len(data['train']) // batch_size
-    scheduler = OneCycleLR(
-        optimizer,
-        0.1,
-        epochs=1,
-        steps_per_epoch=steps_per_epoch,
-    )
+    steps_per_epoch = len(data["train"]) // batch_size
