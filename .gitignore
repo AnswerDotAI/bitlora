@@ -1,2 +1,6 @@
 .ipynb_checkpoints/
 build/
+# mac auto-files
+.DS_Store 
+
+Pipfile
