@@ -5,6 +5,8 @@
 #include <string>
 #include <utility>
 
+#include <cuda_runtime.h>
+
 // Convenience functions for cuda runtime
 
 std::string show_runtime_info(int device_id) {
@@ -46,7 +48,6 @@ std::string show_runtime_info(int device_id) {
   return output;
 }
 
-// return pair with first element being error no error and right being message
 void check_cuda_errors(int line) {
   cudaError_t err = cudaGetLastError();
   std::string output;
@@ -73,7 +74,6 @@ void randint(std::array<numtype, size> &a, std::mt19937 &gen, int min,
 }
 
 // Visualization / observability
-
 
 template <typename numtype, size_t rows, size_t cols>
 std::string show(std::array<numtype, rows * cols> a, std::string name) {
@@ -109,6 +109,31 @@ std::string show(std::array<numtype, rows * cols> a, std::string name) {
   }
   output += "\n";
   return output;
+}
+
+__device__ void show_tile1b(const unsigned char *tile, int R, int C) {
+  for (int r = 0; r < R; r++) {
+    printf("%5d: ", r);
+    for (int c = 0; c < C; c++) {
+      int current_bit = (tile[r * (C / 8) + c / 8] >> (c % 8)) & 0b1;
+      if (current_bit == 1) {
+        printf("X");
+      } else {
+        printf(".");
+      }
+    }
+    printf("\n");
+  }
+}
+
+__device__ void show_tilef(const float *tile, int R, int C) {
+  for (int r = 0; r < R; r++) {
+    printf("%5d: ", r);
+    for (int c = 0; c < C; c++) {
+      printf("%2.0f ", tile[r * C + c]);
+    }
+    printf("\n");
+  }
 }
 
 

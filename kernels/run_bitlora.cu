@@ -77,11 +77,12 @@ void populate_values(std::array<int, M * K> &W_unpacked,
   std::fill_n(begin(out), M * N, 0.0);
 }
 
-template <size_t M, size_t K, size_t N, size_t G,
+template <size_t M, size_t K, size_t N, size_t GS,
           void (*Kernel)(const unsigned char *, const float *, const float *,
                          const float *, float *, int, int, int, int)>
-void launch(const std::array<unsigned char, cdiv(M *K, 8)> &w,
-            const std::array<float, G> &z, const std::array<float, G> &s,
+void launch(const std::array<unsigned char, cdiv(M * K, 8)> &w,
+            const std::array<float, cdiv(M * K, GS)> &z,
+            const std::array<float, cdiv(M * K, GS)> &s,
             const std::array<float, K * N> &x, std::array<float, M * N> &out) {
   unsigned char *w_d;
   float *z_d, *s_d, *x_d, *out_d;
@@ -105,7 +106,7 @@ void launch(const std::array<unsigned char, cdiv(M *K, 8)> &w,
                blocksPerGrid.z);
 
   Kernel<<<blocksPerGrid, threadsPerBlock>>>(w_d, z_d, s_d, x_d, out_d, M, K, N,
-                                             G);
+                                             GS);
 
   cudaDeviceSynchronize(); // block on kernel completion
   check_cuda_errors(__LINE__);
@@ -128,7 +129,8 @@ int main() {
   static constexpr size_t M = 8;
   static constexpr size_t K = 256;
   static constexpr size_t N = 8;
-  static constexpr size_t G = cdiv(M * K, /* group size = */ 64);
+  static constexpr size_t GS = 64;
+  static constexpr size_t G = cdiv(M * K, /* group size = */ GS);
 
   std::array<int, M * K> w_orig;               // w w/o bit packing
   std::array<unsigned char, cdiv(M * K, 8)> w; // w w/ bit packing
@@ -144,7 +146,7 @@ int main() {
   spdlog::info(show<float, 1, G>(z, "z"));
   spdlog::info(show<float, 1, G>(s, "s"));
 
-  launch<M, K, N, G, mm1b>(w, z, s, x, out);
+  launch<M, K, N, GS, mm1b>(w, z, s, x, out);
 
   spdlog::info(show<float, M, N>(out, "out"));
 
