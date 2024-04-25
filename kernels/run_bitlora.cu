@@ -98,8 +98,8 @@ void launch(const std::array<unsigned char, cdiv(M * K, 8)> &w,
   check_cuda_errors(__LINE__);
 
   static constexpr int kTileWidth = 32;
-  dim3 threadsPerBlock(kTileWidth, kTileWidth, 1);
-  dim3 blocksPerGrid(cdiv(N, kTileWidth), cdiv(M, kTileWidth), 1);
+  static constexpr dim3 threadsPerBlock(kTileWidth, kTileWidth, 1);
+  static constexpr dim3 blocksPerGrid(cdiv(N, kTileWidth), cdiv(M, kTileWidth), 1);
   spdlog::info("threadsPerBlock: ({}, {}, {})", threadsPerBlock.x,
                threadsPerBlock.y, threadsPerBlock.z);
   spdlog::info("blocksPerGrid: ({}, {}, {})", blocksPerGrid.x, blocksPerGrid.y,

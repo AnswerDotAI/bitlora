@@ -6,6 +6,7 @@
 #define KERNELS_CUH
 
 #include <cuda_runtime.h>
+#include <cute/tensor.hpp>
 
 #ifndef DEBUG
 #define DEBUG 1

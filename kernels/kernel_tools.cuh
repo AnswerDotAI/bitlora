@@ -1,6 +1,8 @@
 #ifndef KERNEL_TOOLS_CUH
 #define KERNEL_TOOLS_CUH
 
+#include <algorithm>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -55,8 +57,10 @@ void check_cuda_errors(int line) {
     output = "Line " + std::to_string(line) + " : CUDA error: " +
              cudaGetErrorString(err) + "\n\n";
     printf("cuda error: %s\n", output.c_str());
+    exit(1);
   }
 }
+
 
 // Dimension handling
 
@@ -94,7 +98,15 @@ std::string show(std::array<numtype, rows * cols> a, std::string name) {
 
   // print to stdout line break for each row
   for (size_t i = 0; i < rows; i++) {
+    if (i == 7 && rows > 14) {
+      output += "...\n";
+      i = rows - 7;
+    }
     for (size_t j = 0; j < cols; j++) {
+      if (j == 7 && cols > 14 ) {
+        output += " .. ";
+        j = cols - 7;
+      }
       char buffer[50];
       if constexpr (std::is_same<numtype, int>::value) {
         sprintf(buffer, "%*d", spacing, a[i * cols + j]);

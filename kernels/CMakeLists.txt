@@ -17,6 +17,12 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 # Load dependencies - nanobench for benchmarking, spdlog for logging &
 # debugging
 
+FetchContent_Declare(cutlass 
+  GIT_REPOSITORY https://github.com/NVIDIA/cutlass.git 
+  GIT_TAG 5c447dd84f8ae0e1d48ff9a2eae26ce8c4958101
+)
+FetchContent_MakeAvailable(cutlass)
+
 FetchContent_Declare(nanobench
   GIT_REPOSITORY https://github.com/martinus/nanobench.git
   GIT_TAG 9f871ad520e040078597f4194080cc073a765061
@@ -42,4 +48,7 @@ target_compile_features(run_bitlora PUBLIC cxx_std_17)
 set_target_properties(run_bitlora PROPERTIES CUDA_STANDARD 17)
 set_target_properties(run_bitlora PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_include_directories(run_bitlora PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(run_bitlora nanobench spdlog::spdlog)
+target_link_libraries(run_bitlora nanobench spdlog::spdlog CUTLASS)
+target_include_directories(run_bitlora PRIVATE ${CUTLASS_INCLUDE_DIR})
+target_include_directories(run_bitlora PRIVATE ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR})
+set_target_properties(run_bitlora PROPERTIES CUDA_ARCHITECTURES "86")
