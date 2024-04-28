@@ -15,7 +15,10 @@
 
 static constexpr int kTileWidth = 32;
 
-__global__ void mm1b(const unsigned char *w, const float *z, const float *s,
+/**
+  Basic tiled 1-bit HQQ dequant and matmul
+*/
+__global__ void mm1bv1(const unsigned char *w, const float *z, const float *s,
                      const float *xin, float *out, int M, int K, int N, int GS) {
 
   __shared__ float xTile[kTileWidth * kTileWidth];
@@ -97,5 +100,22 @@ __global__ void mm1b(const unsigned char *w, const float *z, const float *s,
     out[y * N + x] = p;
   }
 }
+
+/**
+  CuTE implementation of the 1-bit HQQ dequant and matmul
+*/
+__global__ void mm1bv2(const unsigned char *w, const float *z, const float *s,
+                     const float *xin, float *out, int M, int K, int N, int GS) {
+
+  cute::Layout wLayout = cute::make_layout(M, K);
+  cute::Layout xLayout = cute::make_layout(K, N);
+  cute::Layout outLayout = cute::make_layout(M, N);
+  cute::Tensor wTensor = cute::make_tensor(cute::make_gmem_ptr(w), wLayout);
+  // cute::Tensor test = make_tensor(mke_gmem_ptr(z), 
+
+  
+}
+
+
 
 #endif // KERNELS_CUH

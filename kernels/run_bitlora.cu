@@ -146,7 +146,7 @@ int main() {
   spdlog::info(show<float, 1, G>(z, "z"));
   spdlog::info(show<float, 1, G>(s, "s"));
 
-  launch<M, K, N, GS, mm1b>(w, z, s, x, out);
+  launch<M, K, N, GS, mm1bv1>(w, z, s, x, out);
 
   spdlog::info(show<float, M, N>(out, "out"));
 
