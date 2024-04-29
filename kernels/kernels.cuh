@@ -5,6 +5,7 @@
 #ifndef KERNELS_CUH
 #define KERNELS_CUH
 
+#include <bit>
 #include <cuda_runtime.h>
 #include <cute/tensor.hpp>
 
@@ -13,13 +14,26 @@
 #include "kernel_tools.cuh"
 #endif
 
+/**
+  Constexpr # bits to represent a number
+*/
+constexpr size_t clog2(size_t n) {
+  size_t log = 0;
+  while (n >>= 1) {
+    ++log;
+  }
+  return log;
+}
+
 static constexpr int kTileWidth = 32;
 
 /**
   Basic tiled 1-bit HQQ dequant and matmul
+  Invoked with a 2D grid of 2D blocks
 */
 __global__ void mm1bv1(const unsigned char *w, const float *z, const float *s,
-                     const float *xin, float *out, int M, int K, int N, int GS) {
+                       const float *xin, float *out, int M, int K, int N,
+                       int GS) {
 
   __shared__ float xTile[kTileWidth * kTileWidth];
   __shared__ unsigned char wTile[kTileWidth * kTileWidth / 8 + 1];
@@ -103,19 +117,93 @@ __global__ void mm1bv1(const unsigned char *w, const float *z, const float *s,
 
 /**
   CuTE implementation of the 1-bit HQQ dequant and matmul
+  Invoked with 1D grid of blocks
+
+  TODO: WIP / not finished
+
 */
 __global__ void mm1bv2(const unsigned char *w, const float *z, const float *s,
-                     const float *xin, float *out, int M, int K, int N, int GS) {
+                       const float *xin, float *out, int M, int K, int N,
+                       int GS) {
 
+  // Layout for uncompressed W
   cute::Layout wLayout = cute::make_layout(M, K);
+
   cute::Layout xLayout = cute::make_layout(K, N);
   cute::Layout outLayout = cute::make_layout(M, N);
+  cute::Layout sLayout = cute::make_layout(M * K / GS);
+  cute::Layout zLayout = cute::make_layout(M * K / GS);
   cute::Tensor wTensor = cute::make_tensor(cute::make_gmem_ptr(w), wLayout);
-  // cute::Tensor test = make_tensor(mke_gmem_ptr(z), 
-
-  
+  // cute::Tensor test = make_tensor(mke_gmem_ptr(z),
 }
 
+/**
+  HQQ style 3bit / 32 bit packing.
+  Unlike the 1-bit kernel, we use 1D blocks ala SB's tiled matmul implementation.
+  TODO: s/z dequant not implemented
+ */
+template <size_t BLOCK_SIZE>
+__global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
+                       int K, int N) {
 
+  // Tile index for this thread's row in A and column in B
+  // These values should be the same for all threads working with the same
+  // shared memory.
+  const uint tileRow = blockIdx.y; // ranges from 0 to M / BLOCK_SIZE
+  const uint tileCol = blockIdx.x; // ranges from 0 to N / BLOCK_SIZE
+
+  static constexpr size_t kBitsPerVal = 10;
+
+  __shared__ float wTile[kTileWidth * kTileWidth];
+  __shared__ float xTile[kTileWidth * kTileWidth];
+
+  // pointer into W, x, out
+  // size_t wPtr = tileRow * BLOCK_SIZE * K;
+  size_t wPtr = tileRow * BLOCK_SIZE * K / kBitsPerVal;
+  size_t xPtr = tileCol * BLOCK_SIZE;
+  size_t outPtr = /* row offset = */ (tileRow * BLOCK_SIZE) * N +
+                  /* col offset = */ tileCol * BLOCK_SIZE;
+
+  // row and column within a tile for this thread
+  const uint threadRow = threadIdx.x / BLOCK_SIZE;
+  const uint threadCol = threadIdx.x % BLOCK_SIZE;
+
+  float total = 0.0;
+  // Within tileRow of A, tile iteration moves left to right
+  // within tileCol of B, tile iteration moves top to bottom
+  for (int tileIdx = 0; tileIdx < K / 10; tileIdx += BLOCK_SIZE) {
+    // Write to shared memory
+    const uint8_t shift_amount = (
+        /* bits per uint32_t value */ 32 -
+        /* 00 padding */ 2 -
+        /* data bits */ 3 -
+        /* position within 32 bits */ (threadCol % 10) * 3);
+
+    // TODO: add dequant to wTile value
+    wTile[threadRow * BLOCK_SIZE + threadCol] =
+        static_cast<float>(w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
+        (0b11 << shift_amount) >> shift_amount);
+    xTile[threadRow * BLOCK_SIZE + threadCol] =
+        x[xPtr + threadRow * N + threadCol];
+
+    __syncthreads();
+
+    wPtr += BLOCK_SIZE / kBitsPerVal;
+    xPtr += BLOCK_SIZE * N;
+
+    // Multiply the two shared memory matrices
+    for (int k = 0; k < BLOCK_SIZE; ++k) {
+      total +=
+          wTile[threadRow * BLOCK_SIZE + k] * xTile[k * BLOCK_SIZE + threadCol];
+    }
+
+    __syncthreads();
+  }
+  if (tileRow * BLOCK_SIZE + threadRow < M &&
+      tileCol * BLOCK_SIZE + threadCol < N) {
+    out[outPtr + threadRow * N + threadCol] = total;
+    // out[outPtr + threadRow * N + threadCol] = -1.0;
+  }
+}
 
 #endif // KERNELS_CUH
