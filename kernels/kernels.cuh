@@ -19,6 +19,16 @@ static constexpr int kTileWidth = 32;
 /**
   Basic tiled 1-bit HQQ dequant and matmul
   Invoked with a 2D grid of 2D blocks
+
+  w: weight matrix, packed 1-bit
+  z: zero point
+  s: scale
+  xin: input matrix
+  out: output matrix
+  M: rows in weights/output
+  K: cols in weights, rows in input
+  N: cols in input/output
+  GS: group size for scale/zero point
 */
 __global__ void mm1bv1(const unsigned char *w, const float *z, const float *s,
                        const float *xin, float *out, int M, int K, int N,
@@ -128,8 +138,15 @@ __global__ void mm1bv2(const unsigned char *w, const float *z, const float *s,
 /**
   HQQ style 3bit / 32 bit packing.
   Unlike the 1-bit kernel, we use 1D blocks ala SB's tiled matmul
-  implementation.
-  TODO: s/z dequant not implemented
+  implementation. s/z dequant aren't implemented here, added in the v2
+  implementation
+
+  w: weight matrix, packed 3-bit
+  x: input matrix
+  out: output matrix
+  M: rows in weights/output
+  K: cols in weights, rows in input
+  N: cols in input/output
  */
 template <size_t BLOCK_SIZE>
 __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
@@ -177,10 +194,12 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
     if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
         threadIdx.y == 0) {
       printf("shift amount: %d\n", shift_amount);
-      printf("w value: %u\n", w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal]);
-      uint32_t dummy = 
-        (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
-        (0b11 << shift_amount)) >> shift_amount;
+      printf("w value: %u\n",
+             w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal]);
+      uint32_t dummy =
+          (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
+           (0b11 << shift_amount)) >>
+          shift_amount;
       printf("Extracted value: %u\n", dummy);
     }
 #endif
@@ -188,15 +207,15 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
     // TODO: add dequant to wTile value
     wTile[threadRow * BLOCK_SIZE + threadCol] = static_cast<float>(
         (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
-        (0b11 << shift_amount)) >> shift_amount);
+         (0b11 << shift_amount)) >>
+        shift_amount);
     xTile[threadRow * BLOCK_SIZE + threadCol] =
         x[xPtr + threadRow * N + threadCol];
 
 #if DEBUG
     if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
         threadIdx.y == 0) {
-      // showd(wTile, kTileWidth, kTileWidth, "W Tile");
-      showd(w, M, K/10, "W");
+      showd(w, M, K / 10, "W");
       showd(wTile, kTileWidth, kTileWidth, "W Tile");
     }
 #endif
@@ -217,7 +236,115 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
   if (tileRow * BLOCK_SIZE + threadRow < M &&
       tileCol * BLOCK_SIZE + threadCol < N) {
     out[outPtr + threadRow * N + threadCol] = total;
-    // out[outPtr + threadRow * N + threadCol] = -1.0; // TODO: remove test value
+  }
+}
+
+/**
+  HQQ style 3bit / 32 bit packing + zero point and scaling.
+
+  w: weight matrix, packed 3-bit
+  x: input matrix
+  z: zero point
+  s: scale
+  out: output matrix
+  M: rows in weights/output
+  K: cols in weights, rows in input
+  N: cols in input/output
+ */
+template <size_t BLOCK_SIZE>
+__global__ void mm3bv2(const uint32_t *w, const float *z,
+                       const float *s, const float *x, float *out, int M, int K, int N,
+                       int GS) {
+
+  // Tile index for this thread's row in A and column in B
+  // These values should be the same for all threads working with the same
+  // shared memory.
+  const uint tileRow = blockIdx.y; // ranges from 0 to M / BLOCK_SIZE
+  const uint tileCol = blockIdx.x; // ranges from 0 to N / BLOCK_SIZE
+
+  static constexpr size_t kBitsPerVal = 10;
+
+  __shared__ float wTile[kTileWidth * kTileWidth];
+  __shared__ float xTile[kTileWidth * kTileWidth];
+
+  // pointer into W, x, out
+  // size_t wPtr = tileRow * BLOCK_SIZE * K;
+  size_t wPtr = tileRow * BLOCK_SIZE * K / kBitsPerVal;
+  size_t xPtr = tileCol * BLOCK_SIZE;
+  size_t outPtr = /* row offset = */ (tileRow * BLOCK_SIZE) * N +
+                  /* col offset = */ tileCol * BLOCK_SIZE;
+
+  // row and column within a tile for this thread
+  const uint threadRow = threadIdx.x / BLOCK_SIZE;
+  const uint threadCol = threadIdx.x % BLOCK_SIZE;
+
+#if DEBUG
+  static constexpr int xb = 0;
+  static constexpr int yb = 0;
+#endif
+
+  float total = 0.0;
+  // Within tileRow of A, tile iteration moves left to right
+  // within tileCol of B, tile iteration moves top to bottom
+  for (int tileIdx = 0; tileIdx < K / 10; tileIdx += BLOCK_SIZE) {
+    // Write to shared memory
+    const uint8_t shift_amount = (
+        /* bits per uint32_t value */ 32 -
+        /* 00 padding */ 2 -
+        /* data bits */ 3 -
+        /* position within 32 bits */ (threadCol % 10) * 3);
+
+#if DEBUG
+    if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
+        threadIdx.y == 0) {
+      printf("shift amount: %d\n", shift_amount);
+      printf("w value: %u\n",
+             w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal]);
+      uint32_t dummy =
+          (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
+           (0b11 << shift_amount)) >>
+          shift_amount;
+      printf("Extracted value: %u\n", dummy);
+    }
+#endif
+
+    const size_t woffset =
+        wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal;
+    const size_t group = woffset / GS;
+    const float scale = s[group];
+    const float zp = z[group];
+    wTile[threadRow * BLOCK_SIZE + threadCol] = static_cast<float>(
+        (w[woffset] & (0b11 << shift_amount)) >> shift_amount);
+    xTile[threadRow * BLOCK_SIZE + threadCol] =
+        x[xPtr + threadRow * N + threadCol];
+
+#if DEBUG
+    if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
+        threadIdx.y == 0) {
+      printf("group: %d, scale: %f, zp: %f\n", group, scale, zp);
+      showd(w, M, K / 10, "W");
+      showd(wTile, kTileWidth, kTileWidth, "W Tile");
+      showd(x, K, N, "X");
+    }
+#endif
+
+    __syncthreads();
+
+    wPtr += BLOCK_SIZE / kBitsPerVal;
+    xPtr += BLOCK_SIZE * N;
+
+    // Multiply the two shared memory matrices
+    for (int k = 0; k < BLOCK_SIZE; ++k) {
+      total += wTile[threadRow * BLOCK_SIZE + k] *
+                   xTile[k * BLOCK_SIZE + threadCol] * scale -
+               xTile[k * BLOCK_SIZE + threadCol] * zp * scale;
+    }
+
+    __syncthreads();
+  }
+  if (tileRow * BLOCK_SIZE + threadRow < M &&
+      tileCol * BLOCK_SIZE + threadCol < N) {
+    out[outPtr + threadRow * N + threadCol] = total;
   }
 }
 
