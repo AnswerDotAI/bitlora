@@ -14,17 +14,6 @@
 #include "kernel_tools.cuh"
 #endif
 
-/**
-  Constexpr # bits to represent a number
-*/
-constexpr size_t clog2(size_t n) {
-  size_t log = 0;
-  while (n >>= 1) {
-    ++log;
-  }
-  return log;
-}
-
 static constexpr int kTileWidth = 32;
 
 /**
@@ -118,7 +107,6 @@ __global__ void mm1bv1(const unsigned char *w, const float *z, const float *s,
 /**
   CuTE implementation of the 1-bit HQQ dequant and matmul
   Invoked with 1D grid of blocks
-
   TODO: WIP / not finished
 
 */
@@ -139,7 +127,8 @@ __global__ void mm1bv2(const unsigned char *w, const float *z, const float *s,
 
 /**
   HQQ style 3bit / 32 bit packing.
-  Unlike the 1-bit kernel, we use 1D blocks ala SB's tiled matmul implementation.
+  Unlike the 1-bit kernel, we use 1D blocks ala SB's tiled matmul
+  implementation.
   TODO: s/z dequant not implemented
  */
 template <size_t BLOCK_SIZE>
@@ -168,6 +157,11 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
   const uint threadRow = threadIdx.x / BLOCK_SIZE;
   const uint threadCol = threadIdx.x % BLOCK_SIZE;
 
+#if DEBUG
+  static constexpr int xb = 0;
+  static constexpr int yb = 0;
+#endif
+
   float total = 0.0;
   // Within tileRow of A, tile iteration moves left to right
   // within tileCol of B, tile iteration moves top to bottom
@@ -179,12 +173,33 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
         /* data bits */ 3 -
         /* position within 32 bits */ (threadCol % 10) * 3);
 
+#if DEBUG
+    if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
+        threadIdx.y == 0) {
+      printf("shift amount: %d\n", shift_amount);
+      printf("w value: %u\n", w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal]);
+      uint32_t dummy = 
+        (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
+        (0b11 << shift_amount)) >> shift_amount;
+      printf("Extracted value: %u\n", dummy);
+    }
+#endif
+
     // TODO: add dequant to wTile value
-    wTile[threadRow * BLOCK_SIZE + threadCol] =
-        static_cast<float>(w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
-        (0b11 << shift_amount) >> shift_amount);
+    wTile[threadRow * BLOCK_SIZE + threadCol] = static_cast<float>(
+        (w[wPtr + threadRow * K / kBitsPerVal + threadCol / kBitsPerVal] &
+        (0b11 << shift_amount)) >> shift_amount);
     xTile[threadRow * BLOCK_SIZE + threadCol] =
         x[xPtr + threadRow * N + threadCol];
+
+#if DEBUG
+    if (blockIdx.x == xb && blockIdx.y == yb && threadIdx.x == 0 &&
+        threadIdx.y == 0) {
+      // showd(wTile, kTileWidth, kTileWidth, "W Tile");
+      showd(w, M, K/10, "W");
+      showd(wTile, kTileWidth, kTileWidth, "W Tile");
+    }
+#endif
 
     __syncthreads();
 
@@ -202,7 +217,7 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
   if (tileRow * BLOCK_SIZE + threadRow < M &&
       tileCol * BLOCK_SIZE + threadCol < N) {
     out[outPtr + threadRow * N + threadCol] = total;
-    // out[outPtr + threadRow * N + threadCol] = -1.0;
+    // out[outPtr + threadRow * N + threadCol] = -1.0; // TODO: remove test value
   }
 }
 
