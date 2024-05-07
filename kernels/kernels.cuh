@@ -252,8 +252,8 @@ __global__ void mm3bv1(const uint32_t *w, const float *x, float *out, int M,
   N: cols in input/output
  */
 template <size_t BLOCK_SIZE>
-__global__ void mm3bv2(const uint32_t *w, const float *z,
-                       const float *s, const float *x, float *out, int M, int K, int N,
+__global__ void mm3bv2(const uint32_t *w, const float *z, const float *s,
+                       const float *x, float *out, int M, int K, int N,
                        int GS) {
 
   // Tile index for this thread's row in A and column in B
@@ -346,6 +346,76 @@ __global__ void mm3bv2(const uint32_t *w, const float *z,
       tileCol * BLOCK_SIZE + threadCol < N) {
     out[outPtr + threadRow * N + threadCol] = total;
   }
+}
+
+/*
+   HQQ 3 bit + Dora as a single kernel, no tiling
+
+   x is stored row major (M x K)
+   wq/w, loraA, and loraB are row major (K x N)
+
+  Convention matches pytorch
+
+  wq : (K, N / 10) K = input size, N = output size
+  w : (K, N) K = input size, N = output size
+  z : (K x N / GS) K = input size, N = output size, GS = group size
+  s : (K x N / GS) K = input size, N = output size, GS = group size
+  x : (M x K) M = batch size, K = input size
+  loraA : (K x R) K = input size, R = rank
+  loraB : (R x N) R = rank, N = output size
+
+
+
+  Avoids materializing x @ loraA and simply calculates the output in a single
+  pass.
+
+  loraOut[i, j] = sum_{r=0}^{R-1} sum_{k=0}^{K-1} x[i, k] * loraA[k, r] *
+  loraB[r, j]
+
+
+*/
+__global__ void qdorav1(const uint32_t *wq, float *w, const float *z,
+                        const float *s, const float *x, float *out, int M,
+                        int K, int N, int GS, const float *loraA,
+                        const float *loraB, float *loraOut, size_t R,
+                        float doraScale) {
+
+  static constexpr size_t kBitsPerVal = 10;
+
+  /* dequant wq */
+  const size_t threadId = (blockIdx.x * blockDim.x + threadIdx.x);
+  const size_t wRow = threadId / K;
+  const size_t wCol = threadId % K;
+
+  // dequant wq -> w
+  const size_t outer_index = (wRow * K + wCol) / kBitsPerVal;
+  const size_t inner_index = (wRow * K + wCol) % kBitsPerVal;
+  const size_t shift_amount = 32 - 2 - 3 - inner_index * 3;
+  const size_t group_id = (wRow * K + wCol) / GS;
+  w[wRow * K + wCol] =
+      static_cast<float>(wq[outer_index] >> shift_amount & 0b111) *
+          s[group_id] -
+      z[group_id];
+
+  __syncthreads();
+
+  // naive 3 matmuls: base layer, loraA x loraB
+  const size_t outRow = threadId / N;
+  const size_t outCol = threadId % N;
+  for (size_t idx = 0; idx < R * K; ++idx) {
+    if (outRow < M && outCol < N && idx < K) {
+      out[outRow * N + outCol] += x[outRow * K + idx] * w[idx * N + outCol];
+    } else {
+      const size_t r = idx / K;
+      const size_t k = idx % K;
+      loraOut[outRow * N + outCol] +=
+          x[outRow * K + k] * loraA[k * R + r] * loraB[r * N + outCol];
+    }
+  }
+
+  __syncthreads();
+
+  out[outRow * N + outCol] += loraOut[outRow * N + outCol] * doraScale;
 }
 
 #endif // KERNELS_CUH

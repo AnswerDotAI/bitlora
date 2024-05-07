@@ -19,7 +19,7 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 FetchContent_Declare(cutlass 
   GIT_REPOSITORY https://github.com/NVIDIA/cutlass.git 
-  GIT_TAG 5c447dd84f8ae0e1d48ff9a2eae26ce8c4958101
+  GIT_TAG 033d9efd2db0bbbcf3b3b0650acde6c472f3948e
 )
 FetchContent_MakeAvailable(cutlass)
 
@@ -31,7 +31,7 @@ FetchContent_MakeAvailable(nanobench)
 
 FetchContent_Declare(spdlog
   GIT_REPOSITORY https://github.com/gabime/spdlog.git 
-  GIT_TAG a2b4262090fd3f005c2315dcb5be2f0f1774a005
+  GIT_TAG 27cb4c76708608465c413f6d0e6b8d99a4d84302
 )
 FetchContent_MakeAvailable(spdlog)
 

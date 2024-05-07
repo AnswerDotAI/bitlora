@@ -16,6 +16,8 @@
 #include "kernel_tools.cuh"
 #include "kernels.cuh"
 
+#include <cute/tensor.hpp>
+
 
 /* Bit packing funcitons */
 
@@ -282,15 +284,22 @@ void test_3bitv2() {
   cudaDeviceReset();
 }
 
+void test_cute3bit() {
+  static constexpr size_t M = 64;
+  static constexpr size_t K = 256;
+  static constexpr size_t N = 64;
+  using namespace cute;
+}
+
 int main() {
   auto logger = spdlog::default_logger();
   logger->set_level(spdlog::level::info);
   logger->set_pattern("[%^%l%$] %v");
   spdlog::info(show_runtime_info(0));
 
-  test_1bit();
-  test_3bitv1();
-  test_3bitv2();
+  // test_1bit();
+  // test_3bitv1();
+  // test_3bitv2();
 
   spdlog::info("Done");
 }
