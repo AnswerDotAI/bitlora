@@ -1,6 +1,7 @@
 import os
 import torch
 from torch.utils.cpp_extension import load_inline, load
+import hqq
 
 # TODO(avh): don't hard code arch list
 os.environ['TORCH_CUDA_ARCH_LIST'] = "8.6"
