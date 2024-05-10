@@ -2,7 +2,7 @@
 #define KERNEL_TOOLS_CUH
 
 #include <algorithm> // std::max_element
-#include <cstddef> // uint32_t
+#include <cstdint> // uint32_t
 #include <random>
 #include <stdexcept>
 #include <string>

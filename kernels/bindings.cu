@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <cstdint> // uint32_t
 
 /*
    HQQ 3 bit + Dora as a single kernel, no tiling
@@ -30,7 +31,7 @@ __global__ void qdorav1(const uint32_t *wq, float *w, const float *z,
                         const float *s, const float *x, float *out, int M,
                         int K, int N, int GS, const float *loraA,
                         const float *loraB, float *loraOut, size_t R,
-                        float doraScale) {
+                        float* doraScale) {
 
   static constexpr size_t kBitsPerVal = 10;
 
@@ -67,13 +68,12 @@ __global__ void qdorav1(const uint32_t *wq, float *w, const float *z,
 
   __syncthreads();
 
-  out[outRow * N + outCol] += loraOut[outRow * N + outCol] * doraScale;
+  out[outRow * N + outCol] += loraOut[outRow * N + outCol] * doraScale[outCol];
 }
-
 
 void qdora(torch::Tensor wq, torch::Tensor z, torch::Tensor s, torch::Tensor x,
            torch::Tensor out, int M, int K, int N, int GS, torch::Tensor loraA,
-           torch::Tensor loraB, size_t R, float doraScale) {
+           torch::Tensor loraB, size_t R, torch::Tensor doraScale) {
   int blockSize = 256;
   int numBlocks = (M * N + blockSize - 1) / blockSize;
   float *wDev;       // buffer for unquantized wq
@@ -85,7 +85,7 @@ void qdora(torch::Tensor wq, torch::Tensor z, torch::Tensor s, torch::Tensor x,
       reinterpret_cast<uint32_t*>(wq.data_ptr<int32_t>()), wDev, z.data_ptr<float>(), s.data_ptr<float>(),
       x.data_ptr<float>(), out.data_ptr<float>(), M, K, N, GS,
       loraA.data_ptr<float>(), loraB.data_ptr<float>(), loraOutDev, R,
-      doraScale);
+      doraScale.data_ptr<float>());
   cudaFree(wDev);
   cudaFree(loraOutDev);
 }
