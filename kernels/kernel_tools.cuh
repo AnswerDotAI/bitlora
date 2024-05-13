@@ -1,7 +1,8 @@
 #ifndef KERNEL_TOOLS_CUH
 #define KERNEL_TOOLS_CUH
 
-#include <algorithm>
+#include <algorithm> // std::max_element
+#include <cstdint> // uint32_t
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -77,6 +78,19 @@ void randint(std::array<numtype, size> &a, std::mt19937 &gen, int min,
   }
 }
 
+
+/**
+  Constexpr # bits to represent a number
+  stand-in for std::bitwidth 
+*/
+constexpr size_t clog2(size_t n) {
+  size_t log = 0;
+  while (n >>= 1) {
+    ++log;
+  }
+  return log;
+}
+
 // Visualization / observability
 
 template <typename numtype, size_t rows, size_t cols>
@@ -95,7 +109,6 @@ std::string show(std::array<numtype, rows * cols> a, std::string name) {
   } else {
     throw std::runtime_error("Unsupported number type for show()");
   }
-
   // print to stdout line break for each row
   for (size_t i = 0; i < rows; i++) {
     if (i == 7 && rows > 14) {
@@ -123,12 +136,113 @@ std::string show(std::array<numtype, rows * cols> a, std::string name) {
   return output;
 }
 
+__device__ int max_element(const int* a, int rows, int cols) {
+  // specialized device max_element 
+  int max = a[0];
+  for (int i = 1; i < rows * cols; i++) {
+    if (a[i] > max) {
+      max = a[i];
+    }
+  }
+  return max;
+}
+
+__device__ uint32_t max_element(const uint32_t* a, int rows, int cols) {
+    uint32_t max_val = 0;
+    for (int i = 0; i < rows * cols; i++) {
+        if (a[i] > max_val) {
+            max_val = a[i];
+        }
+    }
+    return max_val;
+}
+
+__device__ float max_element(const float* a, int rows, int cols) {
+  // specialized device max_element 
+  float max = a[0];
+  for (int i = 1; i < rows * cols; i++) {
+    if (a[i] > max) {
+      max = a[i];
+    }
+  }
+  return max;
+}
+
+ __device__ void showd(const int* a, int rows, int cols, const char* name) {
+    if (name[0] != '\0') {
+        printf("\n%s (%d, %d): \n", name, rows, cols);
+    }
+    int max = max_element(a, rows, cols);  // Ensure this function is device-compatible
+    int spacing = (int)log10((float)max + 0.01) + 2;
+    for (int i = 0; i < rows; i++) {
+        if (i == 7 && rows > 14) {
+            printf("...\n");
+            i = rows - 7;  // Skip to the last 7 rows
+        }
+        for (int j = 0; j < cols; j++) {
+            if (j == 7 && cols > 14) {
+                printf(" .. ");
+                j = cols - 7;  // Skip to the last 7 columns
+            }
+            printf("%*d", spacing, a[i * cols + j]);
+        }
+        printf("\n");
+    }
+}
+
+__device__ void showd(const uint32_t* a, int rows, int cols, const char* name) {
+    if (name[0] != '\0') {
+        printf("\n%s (%d, %d): \n", name, rows, cols);
+    }
+    uint32_t max = max_element(a, rows, cols);  // Ensure this function is device-compatible
+    int spacing = (int)log10((float)max + 0.01) + 2;
+    
+    for (int i = 0; i < rows; i++) {
+        if (i == 7 && rows > 14) {
+            printf("...\n");
+            i = rows - 7;  // Skip to the last 7 rows
+        }
+        for (int j = 0; j < cols; j++) {
+            if (j == 7 && cols > 14) {
+                printf(" .. ");
+                j = cols - 7;  // Skip to the last 7 columns
+            }
+            printf("%*u", spacing, a[i * cols + j]);  // Changed %d to %u for unsigned int
+        }
+        printf("\n");
+    }
+}
+
+__device__ void showd(const float* a, int rows, int cols, const char* name) {
+    if (name[0] != '\0') {
+        printf("\n%s (%d, %d): \n", name, rows, cols);
+    }
+    float max = max_element(a, rows, cols);  // Ensure this function is device-compatible and works with float*
+    int spacing = (int)log10(max + 0.1f) + 5; // Increased spacing for floating point numbers
+    for (int i = 0; i < rows; i++) {
+        if (i == 7 && rows > 14) {
+            printf("...\n");
+            i = rows - 7;  // Skip to the last 7 rows
+        }
+        for (int j = 0; j < cols; j++) {
+            if (j == 7 && cols > 14) {
+                printf(" .. ");
+                j = cols - 7;  // Skip to the last 7 columns
+            }
+            printf("%*.1f", spacing, a[i * cols + j]); // Use %f to print floating-point numbers
+        }
+        printf("\n");
+    }
+}
+
+
+
 __device__ void show_tile1b(const unsigned char *tile, int R, int C) {
   for (int r = 0; r < R; r++) {
     printf("%5d: ", r);
     for (int c = 0; c < C; c++) {
       int current_bit = (tile[r * (C / 8) + c / 8] >> (c % 8)) & 0b1;
-      if (current_bit == 1) {
+      if (current_bit > 0) {
         printf("X");
       } else {
         printf(".");

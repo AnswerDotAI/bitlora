@@ -1,6 +1,6 @@
 # bitlora (WIP)
 
-Custom qlora kernels including 1/2-bit quantization.
+Custom qlora kernels including 1/2/3-bit quantization.
 
 ## Building and Running
 
@@ -21,5 +21,5 @@ make watch
 ## Files
 
 - `run_bitlora.cu` - main(), entrypoint for launching kernels
-- `kernels.cuh` - kernel definitions
-- `kernel_toos.cuh` - convenience utilities and debugging functions.
+- `kernels.cuh` - kernel definitions. Initial implementations explorin fused dequant + tiled matmul.
+- `kernel_tools.cuh` - convenience utilities and debugging functions.
