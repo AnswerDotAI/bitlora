@@ -1,3 +1,5 @@
+# from https://github.com/cuda-mode/lectures/blob/main/lecture_014/triton_util.py
+
 import os
 import triton
 import triton.language as tl

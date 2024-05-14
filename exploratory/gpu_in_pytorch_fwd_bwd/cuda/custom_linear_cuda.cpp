@@ -1,3 +1,5 @@
+// Cpp interface of Cuda-C implementation of linear.fwd and linear.bwd
+
 #include <torch/extension.h>
 #include <vector>
 #include <iostream>

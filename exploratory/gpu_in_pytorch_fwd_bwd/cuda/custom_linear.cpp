@@ -1,3 +1,5 @@
+// Pure Cpp implementation of linear.fwd and linear.bwd
+
 #include <torch/extension.h>
 #include <vector>
 

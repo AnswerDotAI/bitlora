@@ -1,3 +1,8 @@
+// Cuda-C implementation of linear.fwd and linear.bwd
+// Note Umer: The kernel logic has a bug, but doesn't matter because
+// (i)  goal was to integrate it into PyTorch, and
+// (ii) I'm using Triton now.
+
 #include <torch/extension.h>
 
 #include <cuda.h>
@@ -8,7 +13,6 @@
 
 inline unsigned int cdiv(unsigned int a, unsigned int b) { return (a + b - 1) / b;}
 
-// //  kernels (suuper naive version)
 // forward
 template <typename t>
 __global__ void cuda_forward_kernel(
