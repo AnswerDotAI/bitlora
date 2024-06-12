@@ -28,4 +28,4 @@ fi
 
 echo "Profiling forward kernel for batch_size = $b"
 
-ncu --target-processes=all --export $outfile --page "details" python run_kernel_axis1.py --b=$b
+ncu --target-processes=all --set full --export $outfile --page "details" --import-source yes --call-stack python run_kernel_axis1.py --b=$b
