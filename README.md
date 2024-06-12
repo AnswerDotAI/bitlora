@@ -1,6 +1,8 @@
-# bitlora (WIP)
+# bitlora (work-in-progress)
 
-Custom qlora kernels including 1/2-bit quantization.
+Experimental implementations exploring feasibility, usefulness, and performance of dedicated q[X]ora kernels.
+
+Being exploratory, this repository is not recommended for external use except by collaboratoring researchers.
 
 | Directory | Description |
 | --------- | ------------|
@@ -8,3 +10,7 @@ Custom qlora kernels including 1/2-bit quantization.
 | exploratory/ | Scripts and notebooks for reproductions, experimentation |
 | kernels/ | CUDA kernel implementations |
 | models/ | Training and inference code for reference quantized models |
+
+# Contact
+
+Collaborators welcome. Please reach out to us - @umerHA @austinvhuang if interested!
