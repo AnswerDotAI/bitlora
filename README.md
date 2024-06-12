@@ -8,7 +8,7 @@ Being exploratory, this repository is not recommended for external use except by
 | --------- | ------------|
 | evals/    | Evaluation harnesses to measure quality effects of quantization |
 | exploratory/ | Scripts and notebooks for reproductions, experimentation |
-| kernels/ | CUDA kernel implementations |
+| kernels/ | Triton and CUDA kernel implementations |
 | models/ | Training and inference code for reference quantized models |
 
 # Contact
